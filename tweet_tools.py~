@@ -124,7 +124,6 @@ class TweetStreaming:
                 stream.sample()
             except:
                 print 'unprintable'
-                time.sleep(10)
             
 
     
@@ -158,7 +157,32 @@ class myStreamListener(tweepy.streaming.StreamListener):
         profile_background_image_url,lang,time_zone,following.favorities_count
         Ç»Ç«ÇéùÇ¡ÇƒÇ¢ÇÈ
         """
-        pdb.set_trace()
+        rst = text
+        [post] = remove_NGword([text])
+        if not rst=='':
+            try:
+                self.api.update_status(post)
+                print "posted: %s"%post
+            except: #Exception as e:
+                poscopy = deepcoppy(post)
+                for char in [poscopy]:
+                    try:
+                        char.encode('cp932')
+                    except:
+                        post = post.replace(char,'')
+                try:
+                    if post=='':
+                        self.api.update_status(post)
+                        print "posted: %s"%post
+                except Exception as e:        
+                    print '====== ERROR MESSAGE ======'
+                    print 'type:' + str(type(e))
+                    print 'args:' + str(e.args)
+                    print 'message:' + e.message
+                    print 'error:' + str(e)
+            time.sleep(5)
+
+        """
         try:
             rst = text.encode('cp932')
             [post] = remove_NGword([rst])
@@ -178,9 +202,8 @@ class myStreamListener(tweepy.streaming.StreamListener):
                 time.sleep(5)
         except:
             rst = '-'
-            
-        #if lang=='ja':
-        #    rst = text.encode('cp932',errors='replace')
+        """
+        
         print rst
         return rst
 	#return True

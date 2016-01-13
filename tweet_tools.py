@@ -162,7 +162,7 @@ class myStreamListener(tweepy.streaming.StreamListener):
         if not rst=='':
             try:
                 self.api.update_status(post)
-                print "posted: %s"%post
+                print "posted[%s]: %s"%(lang,post)
             except: #Exception as e:
                 poscopy = deepcoppy(post)
                 for char in [poscopy]:
