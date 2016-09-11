@@ -1,0 +1,10 @@
+#data
+*.csv
+*.gif
+*.png
+*.jpg
+*.dat
+data/
+
+#other's program
+search/

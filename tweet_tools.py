@@ -3,20 +3,30 @@ import tweepy
 import pandas as pd
 import time
 import datetime
+import urllib
 from copy import deepcopy
 import pdb
+import random
 
 import conv_tools as tools
 
 #### fundamental function ####
 #NG_word = ['@','#','http','RT','&amp']
 NG_word = ['@','#','RT','&amp']
+NG_word.append("http")
+#image_filter = ['https://t.co/']
 
+encode_table = ['utf_8','utf-8', 'euc_jp','cp932', 'euc_jis_2004', 'euc_jisx0213','shift_jis', 'shift_jis_2004','shift_jisx0213','iso2022jp', 'iso2022_jp_1', 'iso2022_jp_2', 'iso2022_jp_3','iso2022_jp_ext','latin_1', 'ascii']
+
+reply_list = [""]
+
+stack_imagename = ["./default_image%d.jpg"%i for i in range(5)]
+stack_videoname = "./default_movie.mp4"
 
 def get_time():
     return datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S") 
 
-def remove_NGword(str_array,option='word'):
+def filter_word(str_array,option='word'):
     '''
     remove NG word from string array of tweet
     option
@@ -42,7 +52,14 @@ def remove_NGword(str_array,option='word'):
                 str_array.remove(tweet)
             else:
                 rst_tweet = ' '.join(wordlist)
-                str_array[str_array.index(tweet)] = rst_tweet    
+                str_array[str_array.index(tweet)] = rst_tweet
+
+        elif option=="filter_image":
+            for word in image_filter:
+                if word in tweet:
+                    break
+            else:
+                str_array.remove(tweet)
     return str_array
 
 class TweetTools:
@@ -64,8 +81,6 @@ class TweetTools:
         
     def run(self):
         self.streaming()
-        #self.print_timeline(6,"ssssss0325")
-        #self.pakutui(6,"ssssss0325")
 
     def read_timeline(self,num,user=''):
         if user=='':
@@ -87,15 +102,25 @@ class TweetTools:
         for tweet in str_array:
             print tweet.encode('cp932',errors='replace')#for windows console
             print "---------------------"
+
+    def delete_reply_tweet(self,N=5000):
+        """
+        delete reply for anyone, N stands how many tweet to review
+        """
+        for status in tweepy.Cursor(self.api.user_timeline).items(N):
+            if status.text[0]=="@":
+                self.api.destroy_status(status.id)
+                print "delete: "+str(status.id)
             
     def post_tweet(self,sentence,check_flag=True):
+        pdb.set_trace()
         try:
             self.api.update_status(sentence)#.encode('cp932',errors='replace'))
             if check_flag:
                 print "posted: \"%s\""%sentence
-        except:
+        except Exception as e:
             if check_flag:
-                print "unposted..."
+                print "unposted. ERROR as: "+str(e)
 
     def test_post_DM_myself(self):
         """
@@ -106,7 +131,7 @@ class TweetTools:
 
     def pakutui(self,num,user):
         str_array = self.read_timeline(num,user)
-        remove_NGword(str_array,option='word')
+        filter_word(str_array,option='word')
         for tweet in str_array:
             self.post_tweet(tweet)
             #s,coding = tools.conv_encoding(tweet)
@@ -122,12 +147,13 @@ class TweetStreaming:
         while True:
             try:
                 stream.sample()
-            except:
-                print 'unprintable'
+            except Exception as e:
+                print "ERROR as: "+str(e)
             
 
     
 class myExeption(Exception): pass
+
 
 class myStreamListener(tweepy.streaming.StreamListener):
     '''
@@ -144,43 +170,93 @@ class myStreamListener(tweepy.streaming.StreamListener):
 	#データベースを閉じることなどに使えます
         return -1
             
-    def on_status(self,status):            
+    def on_status(self,status):
+        sleep_time = 5
 	text = status.text #本文
 	date = status.created_at #ツイートされた日時（確かdatetime型）
         name = status.author.name #投稿者id名(unicode型、sqlite3で都合が良いので.encode("utf-8")とはしませんでした
 	screen_name = status.author.screen_name #投稿者の名前
         img = status.author.profile_image_url #投稿者のプロファイル画像
         lang = status.author.lang
+        retweet_count = status._json["retweet_count"]
         #fav_count = status.author.favorities_count
         """
         その他にもauthorはid,location,followers_count,status_count,description,friends_count,
         profile_background_image_url,lang,time_zone,following.favorities_count
         などを持っている
         """
-        rst = text
-        [post] = remove_NGword([text])
-        if not rst=='':
+        #pdb.set_trace()
+        
+        # filter proccessing
+        if text=="":
+            return False
+        if not status._json.has_key("retweeted_status"):
+            return True
+        retweeted = status._json["retweeted_status"]
+        r_count = retweeted["retweet_count"]
+        f_count = retweeted["favorite_count"]
+        if r_count<100 or f_count<100:
+            return True
+        if not retweeted["entities"].has_key("media"):
+            return True
+        media_urls = []
+        media_type = None
+        index=0
+        for item in status.extended_entities["media"]:
+            if item["type"]=="photo":
+                media_type = "photo"
+                urllib.urlretrieve(item["media_url"],stack_imagename[index])
+                index += 1
+            elif item["type"]=="animated_gif" or item["type"]=="video":
+                media_type = "video"
+                urllib.urlretrieve(item["video_info"]["variants"][0]["url"],stack_videoname)
+            media_urls.append(item["display_url"])
+        #if media_urls==[]:
+        #    print "has no media_url"
+        #    return True
+        try:
+            [post] = filter_word([text])
+            #post = post+" "+media_urls[0]
+            #[post] = filter_word(filter_word([text],option="word"),option="filter_image")
+        except Exception as e:
+            return
+        reply_to = reply_list[random.randint(0,len(reply_list)-1)]
+        post = reply_to+post
+        if not [post]==[]:
             try:
-                self.api.update_status(post)
+                #print type(post)
+                #self.api.update_status(post)
+                if media_type=="photo":
+                    self.api.update_with_media(filename=stack_imagename[0],status=post)
+                elif media_type=="video":
+                    self.api.update_with_media(filename=stack_videoname,status=post)
                 print "posted[%s]: %s"%(lang,post)
+            except Exception as e:
+                print str(e)
+            """
             except: #Exception as e:
-                poscopy = deepcoppy(post)
+                poscopy = deepcopy(post)
                 for char in [poscopy]:
-                    try:
-                        char.encode('cp932')
-                    except:
+                    for encoding in encode_table:
+                        try:
+                            char.encode(encoding)
+                            break
+                        except:
+                            pass
+                    else:
                         post = post.replace(char,'')
                 try:
-                    if post=='':
-                        self.api.update_status(post)
-                        print "posted: %s"%post
+                    if not post==u'':
+                        self.api.update_status(str(post))
+                        #print "posted: %s"%post
                 except Exception as e:        
                     print '====== ERROR MESSAGE ======'
                     print 'type:' + str(type(e))
                     print 'args:' + str(e.args)
                     print 'message:' + e.message
                     print 'error:' + str(e)
-            time.sleep(5)
+            """
+            time.sleep(sleep_time)
 
         """
         try:
@@ -204,8 +280,8 @@ class myStreamListener(tweepy.streaming.StreamListener):
             rst = '-'
         """
         
-        print rst
-        return rst
+        print text
+        return text
 	#return True
 
     
